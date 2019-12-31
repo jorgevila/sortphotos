@@ -22,6 +22,8 @@ import filecmp
 from datetime import datetime, timedelta
 import re
 import locale
+from date_extractor import extract_dates
+import pytz
 
 # Setting locale to the 'local' value
 locale.setlocale(locale.LC_ALL, '')
@@ -30,6 +32,17 @@ exiftool_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'I
 
 
 # -------- convenience methods -------------
+def parse_filename_for_date(src_file):
+    dates = extract_dates(src_file)
+   
+    oldest_date = None
+    for date in dates:
+        if not oldest_date:
+            oldest_date = date
+        elif date < oldest_date:
+            oldest_date = date
+
+    return oldest_date
 
 def parse_date_exif(date_string):
     """
@@ -158,6 +171,18 @@ def get_oldest_timestamp(data, additional_groups_to_ignore, additional_tags_to_i
             elif exifdate and exifdate == oldest_date:
                 oldest_keys.append(key)
 
+
+    if "fileName" not in ignore_tags:
+        fileNameDate = parse_filename_for_date(src_file)
+
+        print(src_file)
+        print(fileNameDate)
+        print(oldest_date)
+        if fileNameDate and (not oldest_date or fileNameDate.replace(tzinfo=pytz.UTC) < oldest_date.replace(tzinfo=pytz.UTC)): 
+            date_available = True
+            oldest_date = fileNameDate
+            oldest_keys = ["fileName"]
+
     if not date_available:
         oldest_date = None
 
@@ -261,6 +286,7 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         tag groups that will be ignored when searching for file data.  By default File is ignored
     additional_tags_to_ignore : list(str)
         specific tags that will be ignored when searching for file data.
+        to avoid parsing filename add 'fileName' to list
     use_only_groups : list(str)
         a list of groups that will be exclusived searched across for date info
     use_only_tags : list(str)
@@ -480,7 +506,8 @@ def main():
                     default=[],
                     help='a list of tags that will be ignored for date informations.\n\
     list of groups and tags here: http://www.sno.phy.queensu.ca/~phil/exiftool/TagNames/\n\
-    the full tag name needs to be included (e.g., EXIF:CreateDate)')
+    the full tag name needs to be included (e.g., EXIF:CreateDate)\n\
+    To avoid parsing filename add \'fileName\' to tags list')
     parser.add_argument('--use-only-groups', type=str, nargs='+',
                     default=None,
                     help='specify a restricted set of groups to search for date information\n\
