@@ -24,25 +24,84 @@ import re
 import locale
 from date_extractor import extract_dates
 import pytz
+from dateparser.search import search_dates
 
 # Setting locale to the 'local' value
 locale.setlocale(locale.LC_ALL, '')
 
 exiftool_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Image-ExifTool', 'exiftool')
-
+MIN_DATE=datetime(2000, 1, 1, 0, 0, 0,tzinfo=pytz.UTC)
 
 # -------- convenience methods -------------
-def parse_filename_for_date(src_file):
-    dates = extract_dates(src_file)
-   
+def parse_filename_for_date(path):
+    print(path)
+    src_file = path.split("/")[-1]
+    
+    dates = parse_filename_for_date_with_datefinder(path)
+    #print(dates)
+    dates += parse_filename_for_date_with_date_extractor(path)
+    #print(dates)
+    dates += parse_filename_for_date_manually(path)
+    #print(dates)
+
+    print("dates from name: %s" % dates)
     oldest_date = None
     for date in dates:
-        if not oldest_date:
-            oldest_date = date
-        elif date < oldest_date:
-            oldest_date = date
+        if date and date > MIN_DATE:
+            if not oldest_date:
+                oldest_date = date
+            elif date < oldest_date:
+                oldest_date = date            
 
     return oldest_date
+
+def parse_filename_for_date_with_datefinder(src_file):
+    dates = search_dates(src_file)
+
+    dates = [] if not dates else [v.replace(tzinfo=pytz.UTC) for k,v in dates ]
+    return dates
+
+def parse_filename_for_date_manually(src_file):
+    
+    dates = []
+
+    patterns = [(".*[^\d](\d\d\d\d\d\d\d\d_[0-2]\d\d\d\d\d)[^\d].*","%Y%m%d_%H%M%S"),(".*[^\d](\d\d\d\d-\d\d-\d\d_[0-2]\d-\d\d-\d\d)[^\d].*","%Y-%m-%d_%H-%M-%S"),(".*[^\d](\d\d\d\d_\d\d_\d\d)[^\d].*","%Y_%m_%d"),(".*[^\d](\d\d\d\d\d\d)[^\d].*","%y%m%d"),(".*[^\d](\d\d\d\d\d\d\d\d)[^\d].*","%Y%m%d"),(".*[^\d](\d\d\d\d_\d\d)[^\d].*","%Y_%m"),("/(\d\d\d\d\d\d)/","%Y%m"),("/(\d\d\d\d)/","%Y")]
+
+    for pattern_date_time,format in patterns:
+        try:
+            #print (pattern_date_time + "->" + format)
+            match = re.findall(pattern_date_time, src_file)
+            if match is not None:
+                #group = match.group()
+                for date in match:
+                    #print(pattern_date_time + " date -> " + date)
+
+                    date = datetime.strptime(date,format)
+                    dates += [date.replace(tzinfo=pytz.UTC)]
+
+        except ValueError as err:
+            print(err)
+
+    return [dates[0]] if len(dates) > 0 else []
+
+def isiterable(p_object):
+    try:
+        it = iter(p_object)
+    except TypeError: 
+        return False
+    return True
+
+def parse_filename_for_date_with_date_extractor(src_file):
+    extracted = extract_dates(src_file)
+
+    dates = extracted if isiterable(extracted) else [extracted]
+
+    #dates = [] if not dates else [v.replace(tzinfo=pytz.UTC) for k,v in dates ]
+    #if dates is not None and len(dates) > 0:
+    #    return [dates[-1]]
+    #else:
+    #    return []
+    return dates
 
 def parse_date_exif(date_string):
     """
@@ -163,21 +222,21 @@ def get_oldest_timestamp(data, additional_groups_to_ignore, additional_tags_to_i
             except Exception as e:
                 exifdate = None
 
-            if exifdate and exifdate < oldest_date:
-                date_available = True
-                oldest_date = exifdate
-                oldest_keys = [key]
+            if exifdate and exifdate.replace(tzinfo=pytz.UTC) > MIN_DATE:
+                if exifdate < oldest_date:
+                    date_available = True
+                    oldest_date = exifdate
+                    oldest_keys = [key]
 
-            elif exifdate and exifdate == oldest_date:
-                oldest_keys.append(key)
+                elif exifdate == oldest_date:
+                    oldest_keys.append(key)
 
-
-    if "fileName" not in ignore_tags:
+    print("from exif: %s" % oldest_date)
+    if "fileName" not in ignore_tags and (not date_available or oldest_date.replace(tzinfo=pytz.UTC) < MIN_DATE):
         fileNameDate = parse_filename_for_date(src_file)
 
         print(src_file)
         print(fileNameDate)
-        print(oldest_date)
         if fileNameDate and (not oldest_date or fileNameDate.replace(tzinfo=pytz.UTC) < oldest_date.replace(tzinfo=pytz.UTC)): 
             date_available = True
             oldest_date = fileNameDate
@@ -252,7 +311,7 @@ class ExifTool(object):
 def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         copy_files=False, test=False, remove_duplicates=True, day_begins=0,
         additional_groups_to_ignore=['File'], additional_tags_to_ignore=[],
-        use_only_groups=None, use_only_tags=None, verbose=True, keep_filename=False):
+        use_only_groups=None, use_only_tags=None, verbose=True, keep_filename=False, delete_duplicated=False):
     """
     This function is a convenience wrapper around ExifTool based on common usage scenarios for sortphotos.py
 
@@ -295,6 +354,9 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         True if you want to see details of file processing
 
     """
+
+    if verbose:
+        print("source dir:" + src_dir)
 
     # some error checking
     if not os.path.exists(src_dir):
@@ -416,6 +478,10 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         append = 1
         fileIsIdentical = False
 
+        if "zip" in ext or "gz" in ext or "doc" in ext or "rar" in ext or "img" in ext:
+            print('Ignore '+ext+' files.\n')
+            fileIsIdentical = True
+
         while True:
 
             if (not test and os.path.isfile(dest_file)) or (test and dest_file in test_file_dict.keys()):  # check for existing name
@@ -425,8 +491,14 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
                     dest_compare = dest_file
                 if remove_duplicates and filecmp.cmp(src_file, dest_compare):  # check for identical files
                     fileIsIdentical = True
-                    if verbose:
+
+                    if delete_duplicated:
+                        print('Identical file already exists.  Duplicate will be deleted.\n')
+                        os.remove(src_file)
+
+                    elif verbose:
                         print('Identical file already exists.  Duplicate will be ignored.\n')
+
                     break
 
                 else:  # name is same, but file is different
@@ -436,8 +508,8 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
                     else:
                         dest_file = root + '_' + str(append) + ext
                     append += 1
-                    if verbose:
-                        print('Same name already exists...renaming to: ' + dest_file)
+                    #if verbose:
+                    #    print('Same name already exists...renaming to: ' + dest_file)
 
             else:
                 break
@@ -452,6 +524,9 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
             if fileIsIdentical:
                 continue  # ignore identical files
             else:
+                if verbose:
+                    print('moving or copying to: ' + dest_file)
+                    
                 if copy_files:
                     shutil.copy2(src_file, dest_file)
                 else:
@@ -478,6 +553,7 @@ def main():
     parser.add_argument('dest_dir', type=str, help='destination directory')
     parser.add_argument('-r', '--recursive', action='store_true', help='search src_dir recursively')
     parser.add_argument('-c', '--copy', action='store_true', help='copy files instead of move')
+    parser.add_argument('-d', '--delete-duplicated', action='store_true', help='delete duplicated files')
     parser.add_argument('-s', '--silent', action='store_true', help='don\'t display parsing details.')
     parser.add_argument('-t', '--test', action='store_true', help='run a test.  files will not be moved/copied\ninstead you will just a list of would happen')
     parser.add_argument('--sort', type=str, default='%Y/%m-%b',
@@ -523,7 +599,7 @@ def main():
     sortPhotos(args.src_dir, args.dest_dir, args.sort, args.rename, args.recursive,
         args.copy, args.test, not args.keep_duplicates, args.day_begins,
         args.ignore_groups, args.ignore_tags, args.use_only_groups,
-        args.use_only_tags, not args.silent, args.keep_filename)
+        args.use_only_tags, not args.silent, args.keep_filename, args.delete_duplicated)
 
 if __name__ == '__main__':
     main()
