@@ -37,12 +37,16 @@ def parse_filename_for_date(path):
     print(path)
     src_file = path.split("/")[-1]
     
-    dates = parse_filename_for_date_with_datefinder(path)
-    #print(dates)
-    dates += parse_filename_for_date_with_date_extractor(path)
-    #print(dates)
-    dates += parse_filename_for_date_manually(path)
-    #print(dates)
+    try:
+        
+        dates = parse_filename_for_date_with_datefinder(path)
+        #print(dates)
+        dates += parse_filename_for_date_with_date_extractor(path)
+        #print(dates)
+        dates += parse_filename_for_date_manually(path)
+        #print(dates)
+    except ValueError as e:
+        print(e)
 
     print("dates from name: %s" % dates)
     oldest_date = None
@@ -299,7 +303,8 @@ class ExifTool(object):
 
         try:
             return json.loads(self.execute(*args))
-        except ValueError:
+        except ValueError as e:
+            print(e)
             sys.stdout.write('No files to parse or invalid data\n')
             exit()
 
@@ -311,7 +316,7 @@ class ExifTool(object):
 def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         copy_files=False, test=False, remove_duplicates=True, day_begins=0,
         additional_groups_to_ignore=['File'], additional_tags_to_ignore=[],
-        use_only_groups=None, use_only_tags=None, verbose=True, keep_filename=False, delete_duplicated=False):
+        use_only_groups=None, use_only_tags=None, verbose=True, keep_filename=False, delete_duplicated=False, keep_file_name=False):
     """
     This function is a convenience wrapper around ExifTool based on common usage scenarios for sortphotos.py
 
@@ -328,6 +333,8 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         date format code for how you want your files renamed
         (https://docs.python.org/2/library/datetime.html#strftime-and-strptime-behavior)
         None to not rename file
+    keep_file-name: str
+        keeping file name
     recursive : bool
         True if you want src_dir to be searched recursively for files (False to search only in top-level of src_dir)
     copy_files : bool
@@ -459,7 +466,10 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
 
         if rename_format is not None and date is not None:
             _, ext = os.path.splitext(filename)
-            filename = date.strftime(rename_format) + ext.lower()
+            if keep_file_name:
+                filename = date.strftime(rename_format) + "_" + _ + "_" +ext.lower()
+            else:
+                filename = date.strftime(rename_format) + ext.lower()
 
         # setup destination file
         dest_file = os.path.join(dest_file, filename)
@@ -569,6 +579,9 @@ def main():
     parser.add_argument('--keep-filename', action='store_true',
                         help='In case of duplicated output filenames an increasing number and the original file name will be appended',
                         default=False)
+    parser.add_argument('--keep-file-name', action='store_true',
+                        help='In case of duplicated output filenames an increasing number and the original file name will be appended',
+                        default=False)
     parser.add_argument('--keep-duplicates', action='store_true',
                         help='If file is a duplicate keep it anyway (after renaming).')
     parser.add_argument('--day-begins', type=int, default=0, help='hour of day that new day begins (0-23), \n\
@@ -599,7 +612,7 @@ def main():
     sortPhotos(args.src_dir, args.dest_dir, args.sort, args.rename, args.recursive,
         args.copy, args.test, not args.keep_duplicates, args.day_begins,
         args.ignore_groups, args.ignore_tags, args.use_only_groups,
-        args.use_only_tags, not args.silent, args.keep_filename, args.delete_duplicated)
+        args.use_only_tags, not args.silent, args.keep_filename, args.delete_duplicated, args.keep_file_name)
 
 if __name__ == '__main__':
     main()
