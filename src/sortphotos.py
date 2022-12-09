@@ -25,6 +25,7 @@ import locale
 from date_extractor import extract_dates
 import pytz
 from dateparser.search import search_dates
+import exiftool
 
 # Setting locale to the 'local' value
 locale.setlocale(locale.LC_ALL, '')
@@ -69,7 +70,15 @@ def parse_filename_for_date_manually(src_file):
     
     dates = []
 
-    patterns = [(".*[^\d](\d\d\d\d\d\d\d\d_[0-2]\d\d\d\d\d)[^\d].*","%Y%m%d_%H%M%S"),(".*[^\d](\d\d\d\d-\d\d-\d\d_[0-2]\d-\d\d-\d\d)[^\d].*","%Y-%m-%d_%H-%M-%S"),(".*[^\d](\d\d\d\d_\d\d_\d\d)[^\d].*","%Y_%m_%d"),(".*[^\d](\d\d\d\d\d\d)[^\d].*","%y%m%d"),(".*[^\d](\d\d\d\d\d\d\d\d)[^\d].*","%Y%m%d"),(".*[^\d](\d\d\d\d_\d\d)[^\d].*","%Y_%m"),("/(\d\d\d\d\d\d)/","%Y%m"),("/(\d\d\d\d)/","%Y")]
+    patterns = [(".*[^\d](\d\d\d\d\d\d\d\d_[0-2]\d\d\d\d\d)[^\d].*","%Y%m%d_%H%M%S"),
+        (".*[^\d](\d\d\d\d-\d\d-\d\d_[0-2]\d-\d\d-\d\d)[^\d].*","%Y-%m-%d_%H-%M-%S"),
+        (".*[^\d](\d\d\d\d_\d\d_\d\d)[^\d].*","%Y_%m_%d"),
+        (".*[^\d](\d\d\d\d\d\d)[^\d].*","%y%m%d"),
+        (".*[^\d](\d\d\d\d\d\d\d\d)[^\d].*","%Y%m%d"),
+        (".*[^\d](\d\d\d\d_\d\d)[^\d].*","%Y_%m"),
+        ("/(\d\d\d\d\d\d)/","%Y%m"),
+        #("/(\d\d\d\d\d\d\d\d).*/","%Y%m%d"),
+        ("/(\d\d\d\d)/","%Y")]
 
     for pattern_date_time,format in patterns:
         try:
@@ -278,8 +287,9 @@ class ExifTool(object):
 
     def __enter__(self):
         self.process = subprocess.Popen(
-            ['perl', self.executable, "-stay_open", "True",  "-@", "-"],
+            ['perl', self.executable, "-stay_open", "True", "-@", "-"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            #['perl', self.executable, "-stay_open", "True",  "-@", "-"]
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -391,21 +401,41 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
     if recursive:
         args += ['-r']
 
+    
+
     args += [src_dir]
-
-
     # get all metadata
-    with ExifTool(verbose=verbose) as e:
-        print('Preprocessing with ExifTool.  May take a while for a large number of files.')
-        sys.stdout.flush()
-        metadata = e.get_metadata(*args)
+    #with ExifTool(verbose=verbose) as e:
+    #    print('Preprocessing with ExifTool.  May take a while for a large number of files.')
+    #    sys.stdout.flush()
+    #    metadata = e.get_metadata(*args)
+    #    print('EXIF ENDS')
 
+    with exiftool.ExifTool(exiftool_location) as e:
+        metadata = e.execute_json(str.join("\n", args).encode('utf-8'))
+    
+    if verbose:
+        import pprint
+        pp = pprint.PrettyPrinter(indent=4)
+        pp.pprint(metadata)
+    
+    with open('/tmp/md.json', 'w') as fd:
+        json.dump(metadata, fd)
+
+    with open('/tmp/md.json', 'r') as fd:
+        metadata = json.load(fd)
+    
     # setup output to screen
     num_files = len(metadata)
-    print()
+    print("%d files" % num_files)
 
     if test:
         test_file_dict = {}
+
+    if verbose:
+        now = datetime.now()
+        current_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        print("Current Time =", current_time)
 
     # parse output extracting oldest relevant date
     for idx, data in enumerate(metadata):
@@ -518,8 +548,8 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
                     else:
                         dest_file = root + '_' + str(append) + ext
                     append += 1
-                    #if verbose:
-                    #    print('Same name already exists...renaming to: ' + dest_file)
+                    if verbose:
+                        print('Same name already exists...renaming to: ' + dest_file)
 
             else:
                 break
@@ -564,7 +594,7 @@ def main():
     parser.add_argument('-r', '--recursive', action='store_true', help='search src_dir recursively')
     parser.add_argument('-c', '--copy', action='store_true', help='copy files instead of move')
     parser.add_argument('-d', '--delete-duplicated', action='store_true', help='delete duplicated files')
-    parser.add_argument('-s', '--silent', action='store_true', help='don\'t display parsing details.')
+    parser.add_argument('-v', '--verbose', action='store_true', help='don\'t display parsing details.')
     parser.add_argument('-t', '--test', action='store_true', help='run a test.  files will not be moved/copied\ninstead you will just a list of would happen')
     parser.add_argument('--sort', type=str, default='%Y/%m-%b',
                         help="choose destination folder structure using datetime format \n\
@@ -612,7 +642,7 @@ def main():
     sortPhotos(args.src_dir, args.dest_dir, args.sort, args.rename, args.recursive,
         args.copy, args.test, not args.keep_duplicates, args.day_begins,
         args.ignore_groups, args.ignore_tags, args.use_only_groups,
-        args.use_only_tags, not args.silent, args.keep_filename, args.delete_duplicated, args.keep_file_name)
+        args.use_only_tags, args.verbose, args.keep_filename, args.delete_duplicated, args.keep_file_name)
 
 if __name__ == '__main__':
     main()
