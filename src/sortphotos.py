@@ -27,6 +27,7 @@ import pytz
 from dateparser.search import search_dates
 import exiftool
 
+
 # Setting locale to the 'local' value
 locale.setlocale(locale.LC_ALL, '')
 
