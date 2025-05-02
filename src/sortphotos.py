@@ -71,15 +71,15 @@ def parse_filename_for_date_manually(src_file):
     
     dates = []
 
-    patterns = [(".*[^\d](\d\d\d\d\d\d\d\d_[0-2]\d\d\d\d\d)[^\d].*","%Y%m%d_%H%M%S"),
-        (".*[^\d](\d\d\d\d-\d\d-\d\d_[0-2]\d-\d\d-\d\d)[^\d].*","%Y-%m-%d_%H-%M-%S"),
-        (".*[^\d](\d\d\d\d_\d\d_\d\d)[^\d].*","%Y_%m_%d"),
-        (".*[^\d](\d\d\d\d\d\d)[^\d].*","%y%m%d"),
-        (".*[^\d](\d\d\d\d\d\d\d\d)[^\d].*","%Y%m%d"),
-        (".*[^\d](\d\d\d\d_\d\d)[^\d].*","%Y_%m"),
-        ("/(\d\d\d\d\d\d)/","%Y%m"),
-        #("/(\d\d\d\d\d\d\d\d).*/","%Y%m%d"),
-        ("/(\d\d\d\d)/","%Y")]
+    patterns = [(r".*[^\d](\d\d\d\d\d\d\d\d_[0-2]\d\d\d\d\d)[^\d].*","%Y%m%d_%H%M%S"),
+        (r".*[^\d](\d\d\d\d-\d\d-\d\d_[0-2]\d-\d\d-\d\d)[^\d].*","%Y-%m-%d_%H-%M-%S"),
+        (r".*[^\d](\d\d\d\d_\d\d_\d\d)[^\d].*","%Y_%m_%d"),
+        (r".*[^\d](\d\d\d\d\d\d)[^\d].*","%y%m%d"),
+        (r".*[^\d](\d\d\d\d\d\d\d\d)[^\d].*","%Y%m%d"),
+        (r".*[^\d](\d\d\d\d_\d\d)[^\d].*","%Y_%m"),
+        (r"/(\d\d\d\d\d\d)/","%Y%m"),
+        (r"/(\d\d\d\d\d\d\d\d).*/","%Y%m%d"),
+        (r"/(\d\d\d\d)/","%Y")]
 
     for pattern_date_time,format in patterns:
         try:
@@ -150,7 +150,7 @@ def parse_date_exif(date_string):
     second = 0
 
     if len(elements) > 1:
-        time_entries = re.split('(\+|-|Z)', elements[1])  # ['HH:MM:SS', '+', 'HH:MM']
+        time_entries = re.split(r'(\+|-|Z)', elements[1])  # ['HH:MM:SS', '+', 'HH:MM']
         time = time_entries[0].split(':')  # ['HH', 'MM', 'SS']
 
         if len(time) == 3:
@@ -215,13 +215,16 @@ def get_oldest_timestamp(data, additional_groups_to_ignore, additional_tags_to_i
 
     if print_all_tags:
         print('All relevant tags:')
+        print(data)
+        print(ignore_groups)
+        print(ignore_tags)
 
     # run through all keys
     for key in data.keys():
 
         # check if this key needs to be ignored, or is in the set of tags that must be used
         if (key not in ignore_tags) and (key.split(':')[0] not in ignore_groups) and 'GPS' not in key:
-
+            
             date = data[key]
 
             if print_all_tags:
@@ -413,6 +416,8 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
     #    print('EXIF ENDS')
 
     with exiftool.ExifTool(exiftool_location) as e:
+        if verbose:
+            print(str.join("\n", args).encode('utf-8'))
         metadata = e.execute_json(str.join("\n", args).encode('utf-8'))
     
     if verbose:
@@ -442,7 +447,7 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
     for idx, data in enumerate(metadata):
 
         # extract timestamp date for photo
-        src_file, date, keys = get_oldest_timestamp(data, additional_groups_to_ignore, additional_tags_to_ignore)
+        src_file, date, keys = get_oldest_timestamp(data, additional_groups_to_ignore, additional_tags_to_ignore, verbose)
 
         # fixes further errors when using unicode characters like "\u20AC"
         src_file.encode('utf-8')
@@ -534,7 +539,7 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
                     fileIsIdentical = True
 
                     if delete_duplicated:
-                        print('Identical file already exists.  Duplicate will be deleted.\n')
+                        print('Identical file already exists.  Duplicate will be deleted. {src_file} \n')
                         os.remove(src_file)
 
                     elif verbose:
